@@ -1,7 +1,9 @@
 import "dotenv/config";
 import express from "express";
+import bcrypt from "bcrypt";
 import cors from "cors";
 import { Pool } from "pg";
+import  { validateRegister} from './validators/register'
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -75,6 +77,54 @@ app.post("/api/login", async(_req, res) => {
         console.error('Gagal login: ', error);
         res.status(500).json({
             message: "gagal login"
+        })
+    }
+})
+
+app.post("/api/register", async(_req, res) => {
+    try {
+        const { errors, values } = validateRegister(_req.body)
+
+        if(errors.length > 0) {
+            return res.status(400).json({
+                message: 'register gagal',
+                error: errors[0],
+                errors
+            })
+        }
+
+        const existing = await pool.query(
+            "SELECT username, email FROM users WHERE username=$1 AND email=$2 LIMIT 1",
+            [values.username, values.email]
+        )
+
+        if(existing.rows.length > 0) {
+            const row = existing.rows[0]
+
+            let error = ''
+            if(row.username === values.username) {
+                error = 'nama pengguna sudah digunakan'
+            }
+            return res.status(409).json({
+                message: 'register gagal',
+                error: error
+            })
+        }
+
+        const passwordHash = await bcrypt.hash(values.password, 10)
+
+        const result = await pool.query('INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING id, username, email', [values.username, values.email, passwordHash]
+        )
+
+        return res.status(201).json({
+            message: 'berhasil register',
+            data: result.rows[0]
+        })
+    } catch(error) {
+        console.error('gagal register: ', error)
+        return res.status(500).json({
+            message: 'gagal register',
+            error: error
         })
     }
 })
